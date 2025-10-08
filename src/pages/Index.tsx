@@ -32,7 +32,7 @@ const Index = () => {
   useEffect(() => {
     if (!loading && city) {
       setTimeout(() => {
-        setMessage('Olá! Me chamo Wesley Charles, sua assistente imobiliária. Estou aqui para te ajudar a encontrar o imóvel ideal!');
+        setMessage('Olá! Me chamo Soldado, sua assistente imobiliária. Estou aqui para te ajudar a encontrar o imóvel ideal!');
         setStep('intro');
         
         setTimeout(() => {
