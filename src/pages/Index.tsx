@@ -1,17 +1,32 @@
 import { useState, useEffect } from 'react';
 import AnaAssistant from '@/components/AnaAssistant';
 import PropertyCard from '@/components/PropertyCard';
+import PropertyDetailsModal from '@/components/PropertyDetailsModal';
 import { useGeolocation } from '@/hooks/useGeolocation';
+import { useFavorites } from '@/hooks/useFavorites';
 import { useToast } from '@/hooks/use-toast';
-import property1 from '@/assets/property-1.jpg';
-import property2 from '@/assets/property-2.jpg';
+import { properties } from '@/data/properties';
+import { Property } from '@/types/property';
+import { Heart } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
-type ConversationStep = 'intro' | 'location-check' | 'showing-properties';
+type ConversationStep = 
+  | 'intro' 
+  | 'location-check' 
+  | 'budget-question'
+  | 'property-type-question'
+  | 'showing-properties';
 
 const Index = () => {
   const [step, setStep] = useState<ConversationStep>('intro');
   const [message, setMessage] = useState('');
+  const [budget, setBudget] = useState<'low' | 'medium' | 'high' | null>(null);
+  const [propertyType, setPropertyType] = useState<string | null>(null);
+  const [filteredProperties, setFilteredProperties] = useState<Property[]>(properties);
+  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const { city, loading } = useGeolocation();
+  const { favorites, toggleFavorite, isFavorite } = useFavorites();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -33,10 +48,8 @@ const Index = () => {
     
     if (step === 'location-check') {
       if (normalizedResponse.includes('sim') || normalizedResponse.includes('quero')) {
-        setMessage(`Ótimo! Encontrei alguns imóveis interessantes em ${city}. Veja essas opções:`);
-        setTimeout(() => {
-          setStep('showing-properties');
-        }, 3000);
+        setMessage('Ótimo! Qual é a sua faixa de orçamento? Diga "até 500 mil", "até 700 mil" ou "acima de 700 mil".');
+        setStep('budget-question');
       } else if (normalizedResponse.includes('não') || normalizedResponse.includes('nao')) {
         setMessage('Entendo! Em qual cidade você gostaria de procurar um imóvel?');
         toast({
@@ -44,15 +57,75 @@ const Index = () => {
           description: "Em breve você poderá buscar imóveis em outras cidades!",
         });
       }
+    } else if (step === 'budget-question') {
+      let budgetRange: 'low' | 'medium' | 'high' = 'medium';
+      
+      if (normalizedResponse.includes('500') || normalizedResponse.includes('quinhentos')) {
+        budgetRange = 'low';
+        setBudget('low');
+      } else if (normalizedResponse.includes('700') || normalizedResponse.includes('setecentos')) {
+        budgetRange = 'medium';
+        setBudget('medium');
+      } else {
+        budgetRange = 'high';
+        setBudget('high');
+      }
+      
+      setMessage('Perfeito! Você prefere apartamento, casa, cobertura ou sobrado?');
+      setStep('property-type-question');
+    } else if (step === 'property-type-question') {
+      let type = 'apartamento';
+      
+      if (normalizedResponse.includes('casa')) {
+        type = 'casa';
+      } else if (normalizedResponse.includes('cobertura')) {
+        type = 'cobertura';
+      } else if (normalizedResponse.includes('sobrado')) {
+        type = 'sobrado';
+      }
+      
+      setPropertyType(type);
+      
+      // Filtrar propriedades
+      const filtered = properties.filter(prop => {
+        const budgetMatch = budget === 'low' ? prop.priceValue <= 500000 :
+                           budget === 'medium' ? prop.priceValue <= 700000 :
+                           prop.priceValue > 700000;
+        const typeMatch = prop.type === type;
+        return budgetMatch && typeMatch;
+      });
+      
+      if (filtered.length > 0) {
+        setFilteredProperties(filtered);
+        setMessage(`Excelente escolha! Encontrei ${filtered.length} ${filtered.length === 1 ? 'imóvel' : 'imóveis'} que ${filtered.length === 1 ? 'corresponde' : 'correspondem'} ao seu perfil. Veja:`);
+      } else {
+        setFilteredProperties(properties.slice(0, 2));
+        setMessage(`Não encontrei imóveis exatamente com essas características, mas separei algumas opções que podem te interessar:`);
+      }
+      
+      setTimeout(() => {
+        setStep('showing-properties');
+      }, 3000);
     }
   };
 
-  const handleViewDetails = (propertyTitle: string) => {
-    toast({
-      title: "Visualizar detalhes",
-      description: `Abrindo detalhes de ${propertyTitle}...`,
-    });
+  const handleViewDetails = (property: Property) => {
+    setSelectedProperty(property);
   };
+
+  const handleToggleFavorites = () => {
+    setShowFavoritesOnly(!showFavoritesOnly);
+    if (!showFavoritesOnly && favorites.length === 0) {
+      toast({
+        title: "Nenhum favorito",
+        description: "Você ainda não adicionou imóveis aos favoritos.",
+      });
+    }
+  };
+
+  const displayProperties = showFavoritesOnly 
+    ? filteredProperties.filter(p => isFavorite(p.id))
+    : filteredProperties;
 
   if (loading) {
     return (
@@ -81,40 +154,60 @@ const Index = () => {
               <AnaAssistant
                 message={message}
                 onUserResponse={handleUserResponse}
-                isListening={step === 'location-check'}
+                isListening={step === 'location-check' || step === 'budget-question' || step === 'property-type-question'}
               />
             </div>
           ) : (
             <div className="space-y-8 animate-in fade-in duration-700">
               <AnaAssistant message={message} isListening={false} />
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-12">
-                <PropertyCard
-                  image={property1}
-                  title="Apartamento Moderno"
-                  price="R$ 450.000"
-                  location={`${city}, PE`}
-                  bedrooms={3}
-                  bathrooms={2}
-                  area="85m²"
-                  onViewDetails={() => handleViewDetails('Apartamento Moderno')}
-                />
-                
-                <PropertyCard
-                  image={property2}
-                  title="Casa com Jardim"
-                  price="R$ 620.000"
-                  location={`${city}, PE`}
-                  bedrooms={4}
-                  bathrooms={3}
-                  area="150m²"
-                  onViewDetails={() => handleViewDetails('Casa com Jardim')}
-                />
+              <div className="flex justify-end">
+                <Button
+                  onClick={handleToggleFavorites}
+                  variant={showFavoritesOnly ? 'default' : 'outline'}
+                  className="shadow-soft"
+                >
+                  <Heart className={`w-4 h-4 mr-2 ${showFavoritesOnly ? 'fill-current' : ''}`} />
+                  {showFavoritesOnly ? 'Ver todos' : `Favoritos (${favorites.length})`}
+                </Button>
               </div>
+              
+              {displayProperties.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-muted-foreground text-lg">Nenhum imóvel encontrado.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {displayProperties.map((property) => (
+                    <PropertyCard
+                      key={property.id}
+                      id={property.id}
+                      image={property.image}
+                      title={property.title}
+                      price={property.price}
+                      location={property.location}
+                      bedrooms={property.bedrooms}
+                      bathrooms={property.bathrooms}
+                      area={property.area}
+                      isFavorite={isFavorite(property.id)}
+                      onViewDetails={() => handleViewDetails(property)}
+                      onToggleFavorite={toggleFavorite}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </main>
       </div>
+
+      <PropertyDetailsModal
+        property={selectedProperty}
+        open={selectedProperty !== null}
+        onClose={() => setSelectedProperty(null)}
+        onToggleFavorite={toggleFavorite}
+        isFavorite={selectedProperty ? isFavorite(selectedProperty.id) : false}
+      />
     </div>
   );
 };
